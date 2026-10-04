@@ -1,52 +1,31 @@
-import os
-from PIL import Image
-
 import torch
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
 
 
-class ImageDataset(Dataset):
+# ============================================================
+# Dataset
+# ============================================================
 
-    def __init__(self, data_dir):
-        self.data_dir = data_dir
+transform = transforms.Compose([
+    transforms.Grayscale(num_output_channels=1),
+    transforms.Resize((128, 128)),
+    transforms.ToTensor(),
+    transforms.Normalize((0.5,), (0.5,)),
+])
 
-        self.files = [
-            f for f in os.listdir(data_dir)
-            if f.lower().endswith((".png", ".jpg", ".jpeg"))
-        ]
 
-        self.transform = transforms.Compose([
-            transforms.Grayscale(num_output_channels=1),
-            transforms.Resize((128, 128)),
-            transforms.ToTensor(),
-            transforms.Normalize((0.5,), (0.5,)),
-        ])
-
-    def __len__(self):
-        return len(self.files)
-
-    def __getitem__(self, idx):
-
-        path = os.path.join(
-            self.data_dir,
-            self.files[idx]
-        )
-
-        image = Image.open(path).convert("L")
-
-        image = self.transform(image)
-
-        return image
+train_dataset = datasets.CIFAR10(
+    root="./data",
+    train=True,
+    download=True,
+    transform=transform,
+)
 
 
 # ============================================================
 # DataLoader
 # ============================================================
-
-train_dataset = ImageDataset(
-    data_dir="data"
-)
 
 train_loader = DataLoader(
     train_dataset,
@@ -56,8 +35,12 @@ train_loader = DataLoader(
 )
 
 
-# Test
-x = next(iter(train_loader))
+# ============================================================
+# Check
+# ============================================================
 
-print("Number of images:", len(train_dataset))
+x, labels = next(iter(train_loader))
+
+print("Dataset size:", len(train_dataset))
 print("Batch shape:", x.shape)
+print("Value range:", x.min().item(), x.max().item())
