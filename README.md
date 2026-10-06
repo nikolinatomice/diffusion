@@ -1,35 +1,48 @@
 # diffusion
 
-Tiny DDPM (noise-prediction U-Net) trained on CIFAR-10, with TensorBoard logging.
+Tiny DDPM on CIFAR-10 with TensorBoard logging.
+
+## Setup
 
 ```bash
+# conda
+conda create -n diffusion python=3.11 -y
+conda activate diffusion
+
+# or venv (macOS/Linux), named diffusion
+python3 -m venv ~/.venvs/diffusion
+source ~/.venvs/diffusion/bin/activate
+
 pip install -r requirements.txt
+```
 
-# 1. quick smoke test (random data, ~1 min on CPU) - verifies everything runs
-python train.py --fake-data --epochs 2 --sample-every 1 --max-steps-per-epoch 5 \
-                --batch-size 16 --num-workers 0 --T 50
+## Run
 
-# 2. real run
-python train.py
-
-# 3. watch it (separate terminal)
+```bash
+python train.py                  # downloads CIFAR-10 to ./data
 tensorboard --logdir runs
 ```
 
-## Files
-| file | purpose |
-|---|---|
-| `model.py` | U-Net + sinusoidal time embedding |
-| `diffusion.py` | noise schedule, `add_noise`, DDPM `sample` |
-| `data.py` | CIFAR-10 dataloader |
-| `train.py` | training loop, EMA, checkpoints, TensorBoard |
+Smoke test (random data, no download):
 
-## What TensorBoard shows
-- **Scalars**: `train/loss`, `train/grad_norm`, `train/lr`, `epoch/loss`, `epoch_loss_by_timestep/*`
-- **Images**
-  - `data/real_batch`: the fixed images used for previews
-  - `denoise_preview/...`: every epoch. Per image: row 1 = noised input at t = 10..999, row 2 = predicted clean image
-  - `samples/final`: every `--sample-every` epochs, 16 images generated from pure noise (EMA weights)
-  - `samples/trajectory_noisy_to_clean`: same samples, 8 intermediate denoising steps (left = noise, right = result)
-- **Histograms**: weight distributions
-- **Text**: the full config of the run
+```bash
+python train.py --fake-data --epochs 2 --sample-every 1 --max-steps-per-epoch 5 \
+                --batch-size 16 --num-workers 0 --T 50
+```
+
+Resume: `python train.py --run-name <name> --resume runs/<name>/checkpoint.pt`
+
+## Files
+
+- `model.py`: U-Net, sinusoidal time embedding
+- `diffusion.py`: schedule, `add_noise`, DDPM sampling
+- `data.py`: CIFAR-10 loader
+- `train.py`: training loop, EMA, checkpoints, TensorBoard
+
+## TensorBoard
+
+- Scalars: loss, grad norm, LR, loss by timestep bucket
+- Images: per-epoch denoising preview (noisy / predicted x0), periodic EMA samples, denoising trajectories
+- Histograms: weights
+
+Note: CUDA only. Mac trains on CPU.
