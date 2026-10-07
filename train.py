@@ -82,6 +82,12 @@ def to_img(x):
     return ((x + 1.0) / 2.0).clamp(0.0, 1.0)
 
 
+def make_vis_grid(x, nrow, scale=4, padding=2):
+    """[-1, 1] images -> upscaled grid (32x32 images are tiny in TensorBoard)."""
+    x = F.interpolate(to_img(x).cpu(), scale_factor=scale, mode="nearest")
+    return make_grid(x, nrow=nrow, padding=padding * scale)
+
+
 @torch.no_grad()
 def denoise_preview(model, diffusion, x_clean, ts, device, seed=0):
     """One-shot denoising at several fixed noise levels.
@@ -102,7 +108,7 @@ def denoise_preview(model, diffusion, x_clean, ts, device, seed=0):
 
     C, H, W = x_clean.shape[1:]
     rows = torch.stack([noisy.view(n, K, C, H, W), pred.view(n, K, C, H, W)], dim=1)
-    return make_grid(to_img(rows.reshape(-1, C, H, W)).cpu(), nrow=K, padding=2)
+    return make_vis_grid(rows.reshape(-1, C, H, W), nrow=K)
 
 
 def save_checkpoint(path, model, ema, optimizer, scheduler, epoch, step, args):
@@ -136,7 +142,7 @@ def main():
     run_name = args.run_name or time.strftime("%Y%m%d-%H%M%S")
     run_dir = Path(args.log_dir) / run_name
     (run_dir / "samples").mkdir(parents=True, exist_ok=True)
-    writer = SummaryWriter(str(run_dir))
+    writer = SummaryWriter(str(run_dir), flush_secs=10)
     writer.add_text("config", "```\n" + json.dumps(vars(args), indent=2) + "\n```", 0)
 
     # ---------- data ----------
@@ -184,7 +190,8 @@ def main():
     preview_ts = [10, 100, 250, 500, 750, 999]
     preview_ts = [min(t, args.T - 1) for t in preview_ts]
 
-    writer.add_image("data/real_batch", make_grid(to_img(x_fixed.cpu()), nrow=4), 0)
+    writer.add_image("data/real_batch", make_vis_grid(x_fixed, nrow=4), 0)
+    writer.flush()
 
     # ---------- training ----------
     n_buckets = 4  # loss is logged separately for low / mid / high noise levels
@@ -254,19 +261,19 @@ def main():
 
         # expensive: full 1000-step sampling from pure noise (+ intermediate steps)
         is_last = epoch + 1 == args.epochs
-        if (epoch + 1) % args.sample_every == 0 or is_last:
+        if epoch == start_epoch or (epoch + 1) % args.sample_every == 0 or is_last:
             g = torch.Generator(device=device).manual_seed(args.seed)  # same start noise each time
             shape = (args.n_samples, args.channels, args.image_size, args.image_size)
             samples, snaps = diffusion.sample(ema.shadow, shape, n_snapshots=8, generator=g)
 
-            writer.add_image("samples/final", make_grid(to_img(samples).cpu(), nrow=4), epoch + 1)
+            writer.add_image("samples/final", make_vis_grid(samples, nrow=4), epoch + 1)
 
             # rows = samples, columns = noisy -> clean
             traj = torch.stack(snaps, dim=1)[:8]  # [8, S, C, H, W]
             C, H, W = traj.shape[2:]
             writer.add_image(
                 "samples/trajectory_noisy_to_clean",
-                make_grid(to_img(traj.reshape(-1, C, H, W)), nrow=len(snaps), padding=2),
+                make_vis_grid(traj.reshape(-1, C, H, W), nrow=len(snaps)),
                 epoch + 1,
             )
             save_image(to_img(samples), run_dir / "samples" / f"epoch_{epoch + 1:04d}.png", nrow=4)
