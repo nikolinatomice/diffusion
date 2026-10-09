@@ -84,46 +84,147 @@ class DiffusionBlock(nn.Module):
 
 
 # ---------------------------------------------------------
-# Tiny Diffusion U-Net
+# Self-attention (global context)
+# ---------------------------------------------------------
+
+class AttentionBlock(nn.Module):
+    def __init__(self, channels, heads=4):
+        super().__init__()
+        self.heads = heads
+        self.norm = nn.GroupNorm(8, channels)
+        self.qkv = nn.Conv2d(channels, channels * 3, 1)
+        self.proj = nn.Conv2d(channels, channels, 1)
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        qkv = self.qkv(self.norm(x)).reshape(B, 3, self.heads, C // self.heads, H * W)
+        q, k, v = qkv.permute(1, 0, 2, 4, 3)  # each [B, heads, HW, d]
+        h = F.scaled_dot_product_attention(q, k, v)
+        h = h.permute(0, 1, 3, 2).reshape(B, C, H, W)
+        return x + self.proj(h)
+
+
+class Stage(nn.Module):
+    """Residual block, optionally followed by self-attention."""
+
+    def __init__(self, in_ch, out_ch, time_dim, attn):
+        super().__init__()
+        self.res = DiffusionBlock(in_ch, out_ch, time_dim)
+        self.attn = AttentionBlock(out_ch) if attn else nn.Identity()
+
+    def forward(self, x, t_emb):
+        return self.attn(self.res(x, t_emb))
+
+
+class Downsample(nn.Module):
+    def __init__(self, ch):
+        super().__init__()
+        self.conv = nn.Conv2d(ch, ch, 3, stride=2, padding=1)
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+class Upsample(nn.Module):
+    def __init__(self, ch):
+        super().__init__()
+        self.conv = nn.Conv2d(ch, ch, 3, padding=1)
+
+    def forward(self, x):
+        return self.conv(F.interpolate(x, scale_factor=2, mode="nearest"))
+
+
+# ---------------------------------------------------------
+# Diffusion U-Net
 # ---------------------------------------------------------
 
 class DiffusionUNet(nn.Module):
-    def __init__(self, in_channels=3, out_channels=3, base_channels=64, time_dim=256):
+    """DDPM-style U-Net.
+
+    For 32x32 input and the defaults, resolutions are 32 -> 16 -> 8 -> 4 with
+    channels 64 / 128 / 256 / 256, `blocks_per_level` residual blocks per level,
+    and self-attention at the 8x8 and 4x4 levels (attn_levels=(2, 3)) + bottleneck.
+    Image size must be divisible by 2 ** (len(channel_mults) - 1).
+    """
+
+    def __init__(
+        self,
+        in_channels=3,
+        out_channels=3,
+        base_channels=64,
+        time_dim=256,
+        channel_mults=(1, 2, 4, 4),
+        attn_levels=(2, 3),
+        blocks_per_level=2,
+    ):
         super().__init__()
-
+        self.downscale = 2 ** (len(channel_mults) - 1)
         self.time_embedding = TimeEmbedding(time_dim)
+        self.in_conv = nn.Conv2d(in_channels, base_channels, 3, padding=1)
 
-        # Encoder
-        self.enc1 = DiffusionBlock(in_channels, base_channels, time_dim)
-        self.enc2 = DiffusionBlock(base_channels, base_channels * 2, time_dim)
+        # ---- encoder ----
+        self.down = nn.ModuleList()
+        self.downsamples = nn.ModuleList()
+        ch = base_channels
+        skip_chs = [ch]
+        for lvl, mult in enumerate(channel_mults):
+            out = base_channels * mult
+            level = nn.ModuleList()
+            for _ in range(blocks_per_level):
+                level.append(Stage(ch, out, time_dim, attn=lvl in attn_levels))
+                ch = out
+                skip_chs.append(ch)
+            self.down.append(level)
+            if lvl != len(channel_mults) - 1:
+                self.downsamples.append(Downsample(ch))
+                skip_chs.append(ch)
 
-        # Bottleneck
-        self.mid = DiffusionBlock(base_channels * 2, base_channels * 4, time_dim)
+        # ---- bottleneck ----
+        self.mid1 = Stage(ch, ch, time_dim, attn=True)
+        self.mid2 = Stage(ch, ch, time_dim, attn=False)
 
-        # Decoder (input = upsampled features + skip connection)
-        self.dec2 = DiffusionBlock(base_channels * 4 + base_channels * 2, base_channels * 2, time_dim)
-        self.dec1 = DiffusionBlock(base_channels * 2 + base_channels, base_channels, time_dim)
+        # ---- decoder ----
+        self.up = nn.ModuleList()
+        self.upsamples = nn.ModuleList()
+        for lvl in reversed(range(len(channel_mults))):
+            out = base_channels * channel_mults[lvl]
+            level = nn.ModuleList()
+            for _ in range(blocks_per_level + 1):
+                level.append(Stage(ch + skip_chs.pop(), out, time_dim, attn=lvl in attn_levels))
+                ch = out
+            self.up.append(level)
+            if lvl != 0:
+                self.upsamples.append(Upsample(ch))
 
-        self.final = nn.Conv2d(base_channels, out_channels, 1)
+        self.final_norm = nn.GroupNorm(8, ch)
+        self.final = nn.Conv2d(ch, out_channels, 3, padding=1)
 
     def forward(self, x, t):
-        assert x.shape[-1] % 4 == 0 and x.shape[-2] % 4 == 0, \
-            "image height/width must be divisible by 4 (two 2x downsamples)"
+        assert x.shape[-1] % self.downscale == 0 and x.shape[-2] % self.downscale == 0, \
+            f"image height/width must be divisible by {self.downscale}"
 
         t_emb = self.time_embedding(t)
 
-        # Encoder
-        e1 = self.enc1(x, t_emb)
-        e2 = self.enc2(F.avg_pool2d(e1, 2), t_emb)
+        # encoder
+        h = self.in_conv(x)
+        skips = [h]
+        for lvl, level in enumerate(self.down):
+            for stage in level:
+                h = stage(h, t_emb)
+                skips.append(h)
+            if lvl < len(self.downsamples):
+                h = self.downsamples[lvl](h)
+                skips.append(h)
 
-        # Bottleneck
-        mid = self.mid(F.avg_pool2d(e2, 2), t_emb)
+        # bottleneck
+        h = self.mid1(h, t_emb)
+        h = self.mid2(h, t_emb)
 
-        # Decoder
-        d2 = F.interpolate(mid, scale_factor=2, mode="bilinear", align_corners=False)
-        d2 = self.dec2(torch.cat([d2, e2], dim=1), t_emb)
+        # decoder
+        for i, level in enumerate(self.up):
+            for stage in level:
+                h = stage(torch.cat([h, skips.pop()], dim=1), t_emb)
+            if i < len(self.upsamples):
+                h = self.upsamples[i](h)
 
-        d1 = F.interpolate(d2, scale_factor=2, mode="bilinear", align_corners=False)
-        d1 = self.dec1(torch.cat([d1, e1], dim=1), t_emb)
-
-        return self.final(d1)
+        return self.final(F.silu(self.final_norm(h)))
