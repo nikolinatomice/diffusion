@@ -34,7 +34,7 @@ Resume: `python train.py --run-name <name> --resume runs/<name>/checkpoint.pt`
 
 ## Files
 
-- `model.py`: U-Net, sinusoidal time embedding
+- `model.py`: U-Net, sinusoidal time embedding with transformer blocks
 - `diffusion.py`: schedule, `add_noise`, DDPM sampling
 - `data.py`: CIFAR-10 loader
 - `train.py`: training loop, EMA, checkpoints, TensorBoard
