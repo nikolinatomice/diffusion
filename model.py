@@ -80,7 +80,7 @@ class DiffusionBlock(nn.Module):
         h = self.norm2(h)
         h = F.silu(h)
 
-        return h + self.skip(x)
+        return (h + self.skip(x)) / math.sqrt(2)
 
 
 # ---------------------------------------------------------
