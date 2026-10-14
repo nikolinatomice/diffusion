@@ -27,6 +27,9 @@ from model import DiffusionUNet
 
 def parse_args():
     p = argparse.ArgumentParser()
+    # device
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--device", type=str, default="cpu", help="Device to train on: cpu, cuda, cuda:0, cuda:1, etc.")
     # data
     p.add_argument("--image-size", type=int, default=32)
     p.add_argument("--channels", type=int, default=3, choices=[1, 3])
@@ -132,11 +135,17 @@ def save_checkpoint(path, model, ema, optimizer, scheduler, epoch, step, args):
 
 def main():
     args = parse_args()
+
+    device = torch.device(args.device)
+
+    if device.type == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("CUDA requested, but CUDA is not available.")
+
+    print(f"Training on: {device}")
+
     torch.manual_seed(args.seed)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.backends.cudnn.benchmark = True
-    print(f"Device: {device}")
 
     # ---------- run dir + tensorboard ----------
     run_name = args.run_name or time.strftime("%Y%m%d-%H%M%S")
