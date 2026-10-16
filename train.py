@@ -28,8 +28,7 @@ from model import DiffusionUNet
 def parse_args():
     p = argparse.ArgumentParser()
     # device
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--device", type=str, default="cpu", help="Device to train on: cpu, cuda, cuda:0, cuda:1, etc.")
+    p.add_argument("--device", type=str, default="cpu", help="Device to train on: cpu, cuda, cuda:0, cuda:1, etc.")
     # data
     p.add_argument("--image-size", type=int, default=32)
     p.add_argument("--channels", type=int, default=3, choices=[1, 3])
