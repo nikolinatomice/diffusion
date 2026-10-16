@@ -183,14 +183,37 @@ def main():
     )
 
     start_epoch, global_step = 0, 0
+    start_epoch, global_step = 0, 0
+
     if args.resume:
-        ckpt = torch.load(args.resume, map_location=device)
+        print(f"Loading checkpoint: {args.resume}")
+
+        ckpt = torch.load(
+            args.resume,
+            map_location=device,
+        )
+
         model.load_state_dict(ckpt["model"])
         ema.shadow.load_state_dict(ckpt["ema"])
+
         optimizer.load_state_dict(ckpt["optimizer"])
         scheduler.load_state_dict(ckpt["scheduler"])
-        start_epoch, global_step = ckpt["epoch"], ckpt["step"]
-        print(f"Resumed from {args.resume} (epoch {start_epoch}, step {global_step})")
+
+        start_epoch = ckpt["epoch"]
+        global_step = ckpt["step"]
+
+        print(
+            f"Resumed from checkpoint:\n"
+            f"  epoch: {start_epoch}\n"
+            f"  global step: {global_step}\n"
+            f"  device: {device}"
+        )
+
+        if "args" in ckpt:
+            old_args = ckpt["args"]
+
+            print("Original training configuration:")
+            print(json.dumps(old_args, indent=2))
 
     # ---------- fixed things we log every epoch for comparability ----------
     x_fixed, _ = next(iter(loader))
