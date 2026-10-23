@@ -21,14 +21,7 @@ pip install -r requirements.txt
 ```bash
 python train.py                  # downloads CIFAR-10 to ./data
 tensorboard --logdir runs
-```
-
-Smoke test (random data, no download):
-
-```bash
-python train.py --fake-data --epochs 2 --sample-every 1 --max-steps-per-epoch 5 \
-                --batch-size 16 --num-workers 0 --T 50
-```
+```s
 
 Resume: `python train.py --run-name <name> --resume runs/<name>/checkpoint.pt`
 
