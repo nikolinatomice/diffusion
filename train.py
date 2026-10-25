@@ -228,7 +228,7 @@ def main():
     n_buckets = 4  # loss is logged separately for low / mid / high noise levels
     bucket_names = [f"t_{i * args.T // n_buckets}-{(i + 1) * args.T // n_buckets - 1}" for i in range(n_buckets)]
 
-    for epoch in range(start_epoch, args.epochs):
+    for epoch in tqdm(range(start_epoch, args.epochs), desc="Training"):
         model.train()
         epoch_loss_sum = torch.zeros((), device=device)
         epoch_steps = 0
