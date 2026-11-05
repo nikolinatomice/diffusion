@@ -183,8 +183,7 @@ def main():
     )
 
     start_epoch, global_step = 0, 0
-    start_epoch, global_step = 0, 0
-
+    
     if args.resume:
         print(f"Loading checkpoint: {args.resume}")
 
