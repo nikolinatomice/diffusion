@@ -1,6 +1,6 @@
 # diffusion
 
-Tiny DDPM on CIFAR-10 with TensorBoard logging.
+Tiny Denoising Diffusion Probabilistic Model (DDPM) CIFAR-10 with TensorBoard logging.
 
 ## Setup
 
