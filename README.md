@@ -39,3 +39,4 @@ Resume: `python train.py --run-name <name> --resume runs/<name>/checkpoint.pt`
 - Histograms: weights
 
 Note: CUDA only. Mac trains on CPU.
+Trained for 500 epochs.
