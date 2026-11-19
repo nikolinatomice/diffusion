@@ -25,18 +25,6 @@ tensorboard --logdir runs
 
 Resume: `python train.py --run-name <name> --resume runs/<name>/checkpoint.pt`
 
-## Files
-
-- `model.py`: U-Net, sinusoidal time embedding with transformer blocks
-- `diffusion.py`: schedule, `add_noise`, DDPM sampling
-- `data.py`: CIFAR-10 loader
-- `train.py`: training loop, EMA, checkpoints, TensorBoard
-
-## TensorBoard
-
-- Scalars: loss, grad norm, LR, loss by timestep bucket
-- Images: per-epoch denoising preview (noisy / predicted x0), periodic EMA samples, denoising trajectories
-- Histograms: weights
 
 Note: CUDA only. Mac trains on CPU.
 Trained for 500 epochs.
